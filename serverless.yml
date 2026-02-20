@@ -1,0 +1,94 @@
+##
+#      ________  ___  ___  _________  ___  ___  ___      ___ ___  ________          ___      ___ ________
+#     |\   __  \|\  \|\  \|\___   ___\\  \|\  \|\  \    /  /|\  \|\   __  \        |\  \    /  /|\_____  \
+#     \ \  \|\  \ \  \\\  \|___ \  \_\ \  \\\  \ \  \  /  / | \  \ \  \|\  \       \ \  \  /  / ||____|\ /_
+#      \ \   __  \ \  \\\  \   \ \  \ \ \   __  \ \  \/  / / \ \  \ \   __  \       \ \  \/  / /      \|\  \
+#       \ \  \ \  \ \  \\\  \   \ \  \ \ \  \ \  \ \    / /   \ \  \ \  \ \  \       \ \    / /      __\_\  \
+#        \ \__\ \__\ \_______\   \ \__\ \ \__\ \__\ \__/ /     \ \__\ \__\ \__\       \ \__/ /      |\_______\
+#         \|__|\|__|\|_______|    \|__|  \|__|\|__|\|__|/       \|__|\|__|\|__|        \|__|/       \|_______|
+#                                                                                          merchant Link Service
+##
+service: merchant-link-service
+frameworkVersion: '3'
+useDotenv: true
+
+custom:
+  # authorizer:
+  #   type: CUSTOM
+  #   authorizerId: !ImportValue authorizerId
+
+  domains:
+    development: "dev-authvia.io"
+    integration: "authvia-nonprod.io"
+    production: "authvia.io"  # I assume you meant 'production' in your third entry
+
+  ##
+  # The base domain is used by the secure links to build the
+  # link returned for created secure links.
+  ##
+  baseDomain: ${self:custom.domains.${self:provider.stage}}
+
+  ##
+  # This is used during consumption of a secure link to authenticate
+  # a user into lock. The JWT created will use this as the issuer
+  # so it must match what is configured for that environment.
+  ##
+  issuer: api.${self:custom.domains.${self:provider.stage}}
+
+  # https://www.npmjs.com/package/serverless-esbuild
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: true
+    keepNames: true
+    target: esnext
+    define: {}
+    platform: node
+    concurrency: 10
+    external:
+      - 're2'
+      - './build/Release/re2.node'  # Explicitly exclude the native module
+    loader:
+      '.node': 'file'  # Tell esbuild how to handle .node files
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+
+plugins:
+  - serverless-esbuild
+#
+# PROVIDER
+#
+provider:
+  name: aws
+  runtime: nodejs22.x
+  stage: ${opt:stage,'development'}
+  region: ${opt:region,env:region,'us-east-1'}
+  tracing:
+    lambda: true
+
+  tags:
+    type: core
+    service: ${self:service}
+    version: ${file(./package.json):version}
+    stage: ${self:provider.stage}
+    sensitive: false
+    environment: ${self:provider.stage}
+    env: ${self:provider.stage}
+    mission:managed-cloud:monitoring: infrastructure
+
+  deploymentBucket:
+    name: authvia-deployments-${self:provider.stage}
+    serverSideEncryption: AES256
+
+
+functions:
+  hello:
+    handler: src/rest/handler.hello
+    events:
+      - httpApi:
+          path: /
+          method: get
